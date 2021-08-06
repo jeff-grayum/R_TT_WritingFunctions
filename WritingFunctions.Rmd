@@ -1,0 +1,201 @@
+---
+title: "R_TT_WritingFunctions"
+author: "Jeff Grayum"
+date: "8/5/2021"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Loading libraries
+```{r}
+library(tidyverse)
+library(tidytuesdayR)
+library(scales)
+library(ggthemes)
+library(skimr)
+library(janitor)
+library(magrittr)
+        
+```
+
+Loading datasets.
+```{r}
+tuesdata <- tidytuesdayR::tt_load('2020-07-21')
+
+animal_outcomes <- tuesdata$animal_outcomes
+
+animal_complaints <- tuesdata$animal_complaints
+
+brisbane_complaints <- tuesdata$brisbane_complaints
+```
+
+
+```{r}
+my_first_function <- function(){
+  print("Hello world")
+}
+
+my_first_function()
+
+#We will pass rename_all a function (.funs).  .x is default, represents each column name. This is a lambda/helper function
+complaints <- complaints %>%
+  rename_all(.funs = function(.x){
+    .x %>%
+      tolower() %>%
+      str_replace(pattern = " ", replacement = "_")
+  })
+
+complaints %>%
+  str()
+
+
+```
+
+-R is considered a functional programming language (it's all functions)
+```{r}
+animal_outcomes %>%
+  view()
+
+#Let's change our data to a percent of the total.
+
+#Without writing a funciton.  It kind of sucks!  (Just doing first two columms, here.)  Let's write a function after this.
+animal_outcomes %>%
+  mutate(ACT = ACT / Total,
+         NSW = NSW / Total)
+
+#Okay, now with a function. It'll divide the value by the total.
+
+convert_to_decimal <- function(value, total){
+  return(value / total)
+}
+
+#Doesn't save us much time, we still have to do each column... R has a helper function that will help us.  Across() !! We'll pair it with mutate.  Put function in across.
+
+
+#.x will represent all of our data in columns. Notice we manually fill in the two variables from the prev function we wrote.
+animal_outcomes %>%
+  mutate(across(ACT:WA, ~convert_to_decimal(value = .x, total = Total)))
+ 
+#The above is still confusing.  Let's turn it into a pipeable function. We'll pass it a dataframe.
+
+convert_area_to_decimal <- function(df) {
+  df %>%
+    mutate(across(ACT:WA, ~convert_to_decimal(value = .x, total = Total)))
+}
+
+#Looks cleaner, does the same thing.
+animal_outcomes %>%
+  convert_area_to_decimal()
+
+
+#Another way to create the same function.  David Robinson style.
+
+tidy_area_percent <- . %>%
+  mutate(across(ACT:WA, ~convert_to_decimal(value = .x, total = Total)))
+
+animal_outcomes %>%
+  tidy_area_percent()
+```
+
+
+```{r}
+animal_outcomes %>%
+  select(outcome) %>%
+  count(outcome) %>%
+  mutate(outcome = fct_reorder(outcome, n)) %>%
+  ggplot(aes(n, outcome)) +
+  geom_col() +
+  labs(x = "",
+       y = "Outcome",
+       title = "Animal Outcomes") +
+  theme_hc()
+
+#What if we want to make this same graph with other columns, but don't want to re-write the entire code? Function!
+
+create_bar_chart <- function(column_var, df) {
+  #THis let's R understand user will be typing this?
+  column_var <- enquo(column_var)
+  
+  animal_outcomes %>%
+  select(column_var) %>%
+  count(column_var) %>%
+  mutate(column_var = fct_reorder(column_var, n)) %>%
+  ggplot(aes(n, column_var)) +
+  geom_col() +
+  theme_hc()
+  
+}
+
+create_bar_chart(outcomes, animal_outcomes)
+#It doesn't understand!  Try adding "bang-bang" (!!).
+
+
+create_bar_chart2 <- function(column_var, df) {
+  
+  column_var <- enquo(column_var) #THis let's R understand user will be typing this? Used as a name?
+  
+  animal_outcomes %>%
+    select(!!column_var) %>%
+    count(!!column_var) %>%
+    mutate(!!column_var := fct_reorder(!!column_var, n)) %>%
+    ggplot(aes(n, !!column_var, fill = !!column_var)) +
+    geom_col() +
+    theme_hc() +
+    labs(x = "") +
+    theme(legend.position = "none")
+  
+}
+
+create_bar_chart2(outcome, animal_outcomes)
+
+create_bar_chart2(animal_type, animal_outcomes)
+```
+Notice this function isn't returning anything.  Just printing!
+
+
+```{r}
+brisbane_complaints %>%
+  filter(suburb == "SUNNYBANK",
+         animal_type == "Attack") %>%
+  count(category, sort = TRUE) %>%
+  drop_na() %>%
+  mutate(category = fct_reorder(category, n)) %>%
+  ggplot(aes(n, category, fill = category)) +
+  geom_col() +
+  theme_hc() +
+  theme(legend.position = "none")
+
+brisbane_complaints %>%
+  count(suburb, sort = TRUE)
+
+#What if we wanted to do this to all of the suburbs?  There are a lot (192). Function time.  Let's save as pdf.
+
+save_charts <- function(df, filename) {
+  
+  temp_chart <- df %>%
+    mutate(category = fct_reorder(category, n)) %>%
+    ggplot(aes(n, category, fill = category)) +
+    geom_col() +
+    theme(legend.position = "none") +
+    ggtitle(paste0(filename, " Attacks"))
+  
+  ggsave(filename = paste0(filename, ".pdf"), plot = temp_chart, width = 11, height = 8.5, units = "in")
+  
+}
+
+brisbane_complaints %>%
+  filter(animal_type == "Attack") %>%
+  count(suburb, category) %>%
+  drop_na() %>%
+  nest(-suburb) %>%
+  mutate(suburb = str_replace(suburb, pattern = " ", replacement = "_")) %$% #replaces space wiht "_" NOTE PIPE
+  walk2(data, suburb, save_charts)
+
+
+```
+
