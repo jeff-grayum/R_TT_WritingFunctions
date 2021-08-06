@@ -196,6 +196,6 @@ brisbane_complaints %>%
   mutate(suburb = str_replace(suburb, pattern = " ", replacement = "_")) %$% #replaces space wiht "_" NOTE PIPE
   walk2(data, suburb, save_charts)
 
-
+#If it requirs output, use map isntead of walk.
 ```
 
